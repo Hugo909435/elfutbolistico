@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>⚽ elfutbolistico</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===================== ÉCRAN D'ACCUEIL ===================== -->
+  <section id="screen-home" class="screen active">
+    <div class="panel">
+      <h1 class="logo">⚽ <span>elfutbolistico</span></h1>
+      <p class="subtitle">Foot multijoueur sur ton téléphone</p>
+      <label class="field">
+        <span>Ton pseudo</span>
+        <input id="input-name" type="text" maxlength="12" placeholder="Joueur" />
+      </label>
+      <button id="btn-create" class="btn primary">Créer une partie</button>
+      <div class="or">ou</div>
+      <div class="join-row">
+        <input id="input-code" type="text" maxlength="5" placeholder="CODE" class="code-input" />
+        <button id="btn-join" class="btn">Rejoindre</button>
+      </div>
+      <p id="home-error" class="error"></p>
+    </div>
+  </section>
+
+  <!-- ===================== SALON D'ATTENTE ===================== -->
+  <section id="screen-lobby" class="screen">
+    <div class="panel wide">
+      <div class="lobby-head">
+        <h2>Salon <span id="lobby-code" class="code-badge"></span></h2>
+        <button id="btn-leave" class="btn small ghost">Quitter</button>
+      </div>
+
+      <div class="teams">
+        <div class="team-col">
+          <h3 class="team-a">Équipe A</h3>
+          <ul id="team-a-list" class="player-list"></ul>
+          <button data-team="A" class="btn choose-team team-a">Rejoindre A</button>
+        </div>
+        <div class="team-col">
+          <h3 class="team-b">Équipe B</h3>
+          <ul id="team-b-list" class="player-list"></ul>
+          <button data-team="B" class="btn choose-team team-b">Rejoindre B</button>
+        </div>
+      </div>
+
+      <div class="host-controls" id="host-controls">
+        <label class="field">
+          <span>Format</span>
+          <select id="select-format"></select>
+        </label>
+        <label class="field">
+          <span>Difficulté IA</span>
+          <select id="select-difficulty">
+            <option value="easy">Facile</option>
+            <option value="medium" selected>Moyen</option>
+            <option value="hard">Difficile</option>
+          </select>
+        </label>
+      </div>
+      <div id="config-readonly" class="config-readonly"></div>
+
+      <div class="lobby-actions">
+        <button id="btn-ready" class="btn">Je suis prêt</button>
+        <button id="btn-start" class="btn primary">Lancer le match</button>
+      </div>
+      <p class="hint">Astuce : pendant le match, tape un joueur de ton équipe pour le contrôler.</p>
+    </div>
+  </section>
+
+  <!-- ===================== JEU ===================== -->
+  <section id="screen-game" class="screen">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD -->
+    <div class="hud-top">
+      <div class="scoreboard">
+        <span class="sb-team team-a">A</span>
+        <span id="hud-score">0 - 0</span>
+        <span class="sb-team team-b">B</span>
+        <span id="hud-time" class="hud-time">05:00</span>
+      </div>
+      <div id="hud-ctrl" class="hud-ctrl"></div>
+    </div>
+    <div id="hud-message" class="hud-message"></div>
+    <div id="switch-feedback" class="switch-feedback"></div>
+
+    <!-- Joystick virtuel -->
+    <div id="joystick" class="joystick">
+      <div id="joystick-knob" class="joystick-knob"></div>
+    </div>
+
+    <!-- Boutons d'action -->
+    <div id="action-buttons" class="action-buttons">
+      <button data-act="pass" class="act-btn pass">Passe</button>
+      <button data-act="cross" class="act-btn cross">Centre</button>
+      <button data-act="long" class="act-btn long">Longue</button>
+      <button data-act="shoot" class="act-btn shoot">Tir</button>
+      <button data-act="tackle" class="act-btn tackle">Tacle</button>
+    </div>
+    <button id="btn-sprint" class="act-btn sprint">Sprint</button>
+    <div id="sprint-gauge" class="sprint-gauge"><i></i></div>
+    <div id="power-gauge" class="power-gauge"><i></i></div>
+  </section>
+
+  <!-- ===================== FIN DE MATCH ===================== -->
+  <section id="screen-end" class="screen">
+    <div class="panel">
+      <h2>Fin du match</h2>
+      <div id="end-score" class="end-score">0 - 0</div>
+      <div id="end-result" class="end-result"></div>
+      <button id="btn-return" class="btn primary">Retour au salon</button>
+    </div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="shared.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/three.module.js" } }
+  </script>
+  <script type="module" src="client.js"></script>
+</body>
+</html>
