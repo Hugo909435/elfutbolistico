@@ -33,6 +33,58 @@ function moveToward(p, tx, ty, speed) {
   p.facing = Math.atan2(dy, dx);
 }
 
+// Position cible d'un joueur (hors tireur) sur un corner : attaquants
+// échelonnés dans la surface autour du point de penalty, défenseurs entre
+// le but et les attaquants (marquage de zone). Partagé par la phase de
+// placement ET l'attente du centre (ballon figé au coin).
+function cornerTarget(p, spX, spTeam) {
+  const gx = spX < FIELD.W / 2 ? 0 : FIELD.W;
+  const dir = gx === 0 ? 1 : -1;
+  const off = (p.index % 3) - 1;                 // -1, 0, 1 : éventail
+  if (p.team === spTeam) {
+    return { tx: gx + dir * (95 + Math.abs(off) * 35), ty: FIELD.H / 2 + off * 60 };
+  }
+  return { tx: gx + dir * (55 + Math.abs(off) * 20), ty: FIELD.H / 2 + off * 45 };
+}
+
+// Position cible d'un joueur de champ (hors tireur/gardien) sur un coup de
+// pied arrêté, selon le type. Le camp adverse respecte la distance
+// réglementaire (9 m) : PERSONNE ne charge le tireur. Partagé par la phase de
+// placement (chrono en pause) ET l'attente du jeu (ballon figé) — sans ça les
+// défenseurs foncent sur un tireur qu'ils ne peuvent pas toucher.
+function setPieceFieldTarget(p, type, spX, spY, spTeam) {
+  let tx, ty;
+  if (type === 'corner') {
+    ({ tx, ty } = cornerTarget(p, spX, spTeam));
+  } else if (type === 'penalty') {
+    // Tout le monde hors de la surface, en arc derrière le ballon
+    const gx = spX < FIELD.W / 2 ? 0 : FIELD.W;
+    const dir = gx === 0 ? 1 : -1;
+    const off = (p.index % 5) - 2;                       // -2..2 : arc
+    tx = gx + dir * (FIELD.PENALTY_W + 30 + Math.abs(off) * 12);
+    ty = FIELD.H / 2 + off * 62;
+  } else if (type === 'kickoff') {
+    // Engagement : chacun rejoint sa moitié de terrain
+    tx = p.home.x; ty = p.home.y;
+    if (p.team === 'A') tx = Math.min(tx, FIELD.W / 2 - 35);
+    else tx = Math.max(tx, FIELD.W / 2 + 35);
+  } else if (type === 'throwin' && p.team === spTeam) {
+    // Coéquipiers du remetteur : proposer une solution courte
+    tx = S.lerp(p.home.x, spX, 0.6);
+    ty = S.lerp(p.home.y, spY, 0.6);
+  } else {
+    // Défense / autres cas : positions de formation
+    tx = p.home.x;
+    ty = S.lerp(p.home.y, spY, 0.25);
+  }
+  // Les adversaires respectent la distance réglementaire (9 m)
+  if (p.team !== spTeam && S.dist(tx, ty, spX, spY) < 95) {
+    const n = S.norm(tx - spX, ty - spY);
+    tx = spX + n.x * 95; ty = spY + n.y * 95;
+  }
+  return { tx: S.clamp(tx, 25, FIELD.W - 25), ty: S.clamp(ty, 25, FIELD.H - 25) };
+}
+
 // Placement pendant un coup de pied arrêté (corner, touche, six mètres, coup
 // franc) : chaque IA rejoint une position dédiée pendant que le chrono est en
 // pause — attaquants dans la surface sur corner, défenseurs qui marquent, etc.
@@ -55,50 +107,7 @@ function setPieceMove(match, p, dt) {
     return moveToward(p, gx, FIELD.H / 2, speed);
   }
 
-  let tx, ty;
-  if (sp.type === 'corner') {
-    // Surface concernée = celle du côté du corner
-    const gx = sp.x < FIELD.W / 2 ? 0 : FIELD.W;
-    const dir = gx === 0 ? 1 : -1;
-    const off = (p.index % 3) - 1;                       // -1, 0, 1 : éventail
-    if (p.team === sp.team) {
-      // Attaquants : dans la surface, autour du point de penalty
-      tx = gx + dir * (95 + Math.abs(off) * 35);
-      ty = FIELD.H / 2 + off * 60;
-    } else {
-      // Défenseurs : entre le but et les attaquants (marquage de zone)
-      tx = gx + dir * (55 + Math.abs(off) * 20);
-      ty = FIELD.H / 2 + off * 45;
-    }
-  } else if (sp.type === 'penalty') {
-    // Tout le monde hors de la surface, en arc derrière le ballon
-    const gx = sp.x < FIELD.W / 2 ? 0 : FIELD.W;
-    const dir = gx === 0 ? 1 : -1;
-    const off = (p.index % 5) - 2;                       // -2..2 : arc
-    tx = gx + dir * (FIELD.PENALTY_W + 30 + Math.abs(off) * 12);
-    ty = FIELD.H / 2 + off * 62;
-  } else if (sp.type === 'kickoff') {
-    // Engagement : chacun rejoint sa moitié de terrain
-    tx = p.home.x; ty = p.home.y;
-    if (p.team === 'A') tx = Math.min(tx, FIELD.W / 2 - 35);
-    else tx = Math.max(tx, FIELD.W / 2 + 35);
-  } else if (sp.type === 'throwin' && p.team === sp.team) {
-    // Coéquipiers du remetteur : proposer une solution courte
-    tx = S.lerp(p.home.x, sp.x, 0.6);
-    ty = S.lerp(p.home.y, sp.y, 0.6);
-  } else {
-    // Défense / autres cas : positions de formation
-    tx = p.home.x;
-    ty = S.lerp(p.home.y, sp.y, 0.25);
-  }
-
-  // Les adversaires respectent la distance réglementaire (9 m)
-  if (p.team !== sp.team && S.dist(tx, ty, sp.x, sp.y) < 95) {
-    const n = S.norm(tx - sp.x, ty - sp.y);
-    tx = sp.x + n.x * 95; ty = sp.y + n.y * 95;
-  }
-  tx = S.clamp(tx, 25, FIELD.W - 25);
-  ty = S.clamp(ty, 25, FIELD.H - 25);
+  const { tx, ty } = setPieceFieldTarget(p, sp.type, sp.x, sp.y, sp.team);
   moveToward(p, tx, ty, speed);
 }
 
@@ -108,6 +117,19 @@ function updateAIPlayer(match, p, dt) {
   const baseSpeed = (p.isGK ? PHYS.GK_SPEED : PHYS.PLAYER_SPEED) * diff.speed;
 
   if (p.isGK) return goalkeeper(match, p, baseSpeed);
+
+  // ---- Coup de pied arrêté joué mais ballon encore figé ---------------------
+  // Tant que le tireur n'a pas joué (corner, coup franc, touche, six mètres…),
+  // on TIENT sa position : les adversaires respectent la distance et ne
+  // chargent PAS un tireur qu'ils ne peuvent pas toucher, et la surface reste
+  // peuplée sur corner au lieu de se vider avant le centre.
+  const rf = match.restartFrozen;
+  if (rf && p.pid !== rf.takerPid) {
+    const taker = match.players.find(q => q.pid === rf.takerPid);
+    const { tx, ty } = setPieceFieldTarget(p, rf.type, rf.x, rf.y, taker ? taker.team : p.team);
+    moveToward(p, tx, ty, baseSpeed);
+    return;
+  }
 
   const owner = ballOwner(match);
   const myTeam = p.team;

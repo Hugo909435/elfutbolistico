@@ -147,7 +147,7 @@ function updateHud(snap) {
   aimMode = nowAim;
   $('hud-ctrl').textContent = aimMode
     ? '🎯 Joystick : tourner la vue · bouton : passer'
-    : (mine ? `Tu contrôles : ${mine.id}${mine.gk ? ' (GB)' : ''}` : 'Tape un joueur pour le contrôler');
+    : (mine ? `Tu contrôles : ${mine.id}${mine.gk ? ' (GB)' : ''} · glisse pour tourner la vue` : 'Tape un joueur pour le contrôler');
 
   const msgEl = $('hud-message');
   if (snap.message) { msgEl.textContent = snap.message; msgEl.classList.add('show'); }
@@ -197,7 +197,11 @@ function blendSnaps(pa, pb, t) {
 
 function loop() {
   requestAnimationFrame(loop);
-  if (gameActive && scene) scene.update(interpState(), { myTeam, mySocket: socket.id, aim: aimMode ? aimAngle : null });
+  if (gameActive && scene) scene.update(interpState(), {
+    myTeam, mySocket: socket.id,
+    aim: aimMode ? aimAngle : null,
+    corner: !!(curState && curState.rst === 'corner'),
+  });
 }
 loop();
 window.addEventListener('resize', () => { if (scene) scene.resize(); });
@@ -338,20 +342,44 @@ sprintBtn.addEventListener('touchend', () => { sprintHeld = false; sendInput(); 
 sprintBtn.addEventListener('mousedown', () => { sprintHeld = true; sendInput(); });
 sprintBtn.addEventListener('mouseup', () => { sprintHeld = false; sendInput(); });
 
-// ---- Tap sur le terrain : changer de joueur contrôlé (raycast 3D) ---------
-let tapStart = null;
-$('game-canvas').addEventListener('touchstart', (e) => {
-  const t = e.changedTouches[0]; tapStart = { x: t.clientX, y: t.clientY, id: t.identifier };
+// ---- Terrain : glisser = tourner la caméra · tap = changer de joueur -------
+// Le glissé horizontal fait orbiter la caméra 3e personne autour du joueur
+// contrôlé (scene.camYaw). Comme les passes/tirs sont calculés relativement à
+// la caméra, on peut ainsi viser une passe dans n'importe quelle direction.
+// Un simple tap (sans déplacement) garde son rôle : sélectionner un joueur.
+const CAM_SENS = 0.006;              // rad par pixel glissé
+let canvasDrag = null;               // { id, x0, y0, lastX, moved }
+function canvasDown(cx, cy, id) {
+  canvasDrag = { id, x0: cx, y0: cy, lastX: cx, moved: false };
+  if (scene) scene.camYawActive = true;
+}
+function canvasMoveTo(cx, cy) {
+  if (!canvasDrag) return;
+  if (!canvasDrag.moved && Math.hypot(cx - canvasDrag.x0, cy - canvasDrag.y0) > 8) canvasDrag.moved = true;
+  if (scene && canvasDrag.moved && !aimMode) scene.camYaw += (cx - canvasDrag.lastX) * CAM_SENS;
+  canvasDrag.lastX = cx;
+}
+function canvasUp(cx, cy) {
+  if (!canvasDrag) return;
+  if (scene) scene.camYawActive = false;
+  if (!canvasDrag.moved) handleTap(cx, cy);   // tap franc = changer de joueur
+  canvasDrag = null;
+}
+const gameCanvas = $('game-canvas');
+gameCanvas.addEventListener('touchstart', (e) => {
+  if (canvasDrag) return;
+  const t = e.changedTouches[0]; canvasDown(t.clientX, t.clientY, t.identifier);
 });
-$('game-canvas').addEventListener('touchend', (e) => {
-  for (const t of e.changedTouches) {
-    if (tapStart && t.identifier === tapStart.id) {
-      if (Math.hypot(t.clientX - tapStart.x, t.clientY - tapStart.y) < 20) handleTap(t.clientX, t.clientY);
-      tapStart = null;
-    }
-  }
+gameCanvas.addEventListener('touchmove', (e) => {
+  if (!canvasDrag) return;
+  for (const t of e.changedTouches) if (t.identifier === canvasDrag.id) { e.preventDefault(); canvasMoveTo(t.clientX, t.clientY); break; }
+}, { passive: false });
+gameCanvas.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) if (canvasDrag && t.identifier === canvasDrag.id) { canvasUp(t.clientX, t.clientY); break; }
 });
-$('game-canvas').addEventListener('mousedown', (e) => handleTap(e.clientX, e.clientY));
+gameCanvas.addEventListener('mousedown', (e) => canvasDown(e.clientX, e.clientY, 'mouse'));
+window.addEventListener('mousemove', (e) => { if (canvasDrag && canvasDrag.id === 'mouse') canvasMoveTo(e.clientX, e.clientY); });
+window.addEventListener('mouseup', (e) => { if (canvasDrag && canvasDrag.id === 'mouse') canvasUp(e.clientX, e.clientY); });
 
 function handleTap(cx, cy) {
   if (!scene || !curState || !myTeam) return;

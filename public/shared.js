@@ -55,7 +55,7 @@
     MIN_SHOT_POWER: 260,
     PASS_POWER: 430,
     LONG_PASS_POWER: 620,
-    CROSS_POWER: 540,
+    CROSS_POWER: 620,            // centre tendu (borne de vitesse, cf. tryCross)
     HEADER_POWER: 480,
     TACKLE_RANGE: 40,
     TACKLE_COOLDOWN: 1.2,

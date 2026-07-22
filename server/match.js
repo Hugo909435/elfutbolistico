@@ -212,8 +212,12 @@ class Match {
   tryShoot(p, dir, power01) {
     if (this.hasBall(p)) {
       const power = S.lerp(PHYS.MIN_SHOT_POWER, PHYS.MAX_SHOT_POWER, power01);
-      const spread = 0.04 + 0.09 * power01;                 // plus fort = moins précis
-      this._kick(p, dir, power, spread, 0.35 + power01 * 0.5);
+      // Frappe TENDUE et précise : peu d'imprécision latérale, et surtout une
+      // élévation faible — le tir reste bas / à mi-hauteur au lieu de s'envoler
+      // par-dessus la cage. La puissance donne de la vitesse, pas de la hauteur.
+      const spread = 0.02 + 0.05 * power01;                 // plus fort = un peu moins précis
+      const lift = 0.05 + 0.12 * power01;                   // ras du sol -> mi-hauteur
+      this._kick(p, dir, power, spread, lift);
       this._emit('shot', p);
     } else if (this._nearMovingBall(p)) {
       // Reprise de volée : bonus puissance, précision réduite — le joueur
@@ -243,12 +247,21 @@ class Match {
 
   tryCross(p, dir) {
     if (!this.hasBall(p)) return;
-    // Centre en cloche vers la surface adverse
+    // Centre TENDU et rapide vers la surface adverse (différent du jeu long,
+    // flottant) : cloche plus rasante, avec une vitesse calculée pour retomber
+    // pile dans la surface. Le ballon arrive vite ET aérien -> reprise de
+    // volée / retournée réellement jouable.
     const gx = this.oppGoalX(p.team);
     const targetX = gx + (p.team === 'A' ? -FIELD.PENALTY_W * 0.6 : FIELD.PENALTY_W * 0.6);
     const targetY = FIELD.H / 2 + (p.y < FIELD.H / 2 ? 1 : -1) * 40;
-    const aim = S.norm(targetX - this.ball.x, targetY - this.ball.y);
-    this._kick(p, aim, PHYS.CROSS_POWER, 0.05, 0.9);        // fort lift = cloche
+    const dx = targetX - this.ball.x, dy = targetY - this.ball.y;
+    const D = S.len(dx, dy) || 1;
+    const aim = { x: dx / D, y: dy / D };
+    const lift = 0.5;                                        // cloche rasante (vs 0.9 avant)
+    // Portée d'un tir en cloche : D = 2·lift·v² / g  ->  v = √(D·g / (2·lift))
+    let v = Math.sqrt(D * AIR.GRAVITY / (2 * lift));
+    v = S.clamp(v, PHYS.CROSS_POWER * 0.75, PHYS.CROSS_POWER * 1.6);
+    this._kick(p, aim, v, 0.05, lift);
     this._emit('cross', p);
   }
 
@@ -947,6 +960,9 @@ class Match {
     const ev = this.events; this.events = [];
     return {
       phase: this.phase,
+      // Type de coup de pied arrêté en cours (placement OU ballon figé) : sert
+      // au client à choisir la caméra dédiée (ex. vue de corner).
+      rst: this.setPiece ? this.setPiece.type : (this.restartFrozen ? this.restartFrozen.type : null),
       time: Math.ceil(this.time),
       half: this.half,
       score: this.score,

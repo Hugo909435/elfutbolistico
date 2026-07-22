@@ -29,6 +29,10 @@ export class Scene3D {
     this.clock = new THREE.Clock();
     this._camTarget = new THREE.Vector3(0, 1, 0);
     this._camPos = new THREE.Vector3(0, 6, 14);
+    // Orbite manuelle de la caméra 3e personne (glissé sur le terrain) :
+    // camYaw = décalage d'angle autour du joueur, camYawActive = doigt posé.
+    this.camYaw = 0;
+    this.camYawActive = false;
     this._initRenderer();
     this._initScene();
     this._buildStadium();
@@ -428,13 +432,23 @@ export class Scene3D {
       if (p.fl && !e.ring.visible) { e.ring.visible = true; e.ring.material.color.setHex(0xff3030); }
     }
 
-    this._updateCamera(controlled, state, dt, ctx.aim);
+    this._updateCamera(controlled, state, dt, ctx.aim, ctx.corner);
     this.render();
   }
 
-  _updateCamera(controlled, state, dt, aim) {
+  _updateCamera(controlled, state, dt, aim, corner) {
     let desiredPos, lookAt;
-    if (controlled && aim != null) {
+    if (corner && aim == null) {
+      // VUE DE CORNER : caméra placée derrière le but attaqué, en hauteur, qui
+      // cadre toute la surface. Lisible aussi bien en défense (on voit les
+      // attaquants et le centre arriver) qu'en attaque (on vise le point de
+      // chute). Le tireur, lui (aim != null), garde sa vue de visée.
+      const b = this.ball.position;
+      const side = b.x < 0 ? -1 : 1;               // but attaqué : -HW ou +HW
+      const goalX = side * HW;
+      desiredPos = new THREE.Vector3(goalX + side * 13, 13, b.z * 0.5);
+      lookAt = new THREE.Vector3(goalX - side * 13, 1, b.z * 0.15);
+    } else if (controlled && aim != null) {
       // MODE VISÉE (remise en jeu figée) : caméra orbitale derrière le tireur,
       // pilotée par le joystick — on balaye le terrain pour choisir sa passe.
       const p = controlled.pos;
@@ -462,6 +476,17 @@ export class Scene3D {
         0.5,
         b.z * 0.7 + p.z * 0.3
       );
+      // Orbite manuelle : on fait pivoter la position de la caméra autour du
+      // point visé, ce qui permet de tourner la vue pour viser une passe dans
+      // n'importe quelle direction (les passes sont relatives à la caméra).
+      if (this.camYaw) {
+        const ox = desiredPos.x - lookAt.x, oz = desiredPos.z - lookAt.z;
+        const c = Math.cos(this.camYaw), s = Math.sin(this.camYaw);
+        desiredPos.x = lookAt.x + ox * c - oz * s;
+        desiredPos.z = lookAt.z + ox * s + oz * c;
+      }
+      // Recentrage doux vers l'orientation d'attaque quand on ne tourne pas.
+      if (!this.camYawActive) this.camYaw *= Math.exp(-dt * 0.7);
     } else {
       // Caméra de retransmission : suit le ballon en diagonale
       const b = this.ball.position;
