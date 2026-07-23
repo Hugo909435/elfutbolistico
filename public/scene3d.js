@@ -36,7 +36,8 @@ const ANIMS = {
   gkIdle: 'goalkeeper idle.fbx',
   run: 'jog forward.fbx',
   kick: 'kick soccerball.fbx',
-  slide: 'soccer tackle.fbx',
+  slide: 'soccer tackle (2).fbx',   // tacle GLISSÉ au sol (maintien) — variante qui plonge vraiment
+  standTackle: 'soccer tackle.fbx', // tacle DEBOUT / pique (clic bref)
   dive: 'goalkeeper diving save.fbx',
   volley: 'scissor kick.fbx',
 };
@@ -112,6 +113,15 @@ export class Scene3D {
     // camYaw = décalage d'angle autour du joueur, camYawActive = doigt posé.
     this.camYaw = 0;
     this.camYawActive = false;
+    // Vecteurs scratch réutilisés chaque frame (voir update()/_updateCamera) :
+    // éviter d'allouer des THREE.Vector3 à 60 Hz supprime les saccades GC.
+    this._ballNow = new THREE.Vector3();
+    this._vMoved = new THREE.Vector3();
+    this._vAxis = new THREE.Vector3();
+    this._vPos = new THREE.Vector3();
+    this._desiredPos = new THREE.Vector3();
+    this._lookAt = new THREE.Vector3();
+    this._controlled = { pos: new THREE.Vector3(), dir: new THREE.Vector3(), team: null };
     this._initRenderer();
     this._initScene();
     this._buildStadium();
@@ -124,9 +134,14 @@ export class Scene3D {
   // --------------------------------------------------------------------------
   _initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Sur écran haute densité (téléphones), plafonner le pixelRatio à 1.5 divise
+    // le nombre de pixels à calculer par ~1,8 vs 2.0 — c'est le plus gros levier
+    // fps sur mobile, pour une différence de netteté quasi imperceptible.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCFShadowMap (au lieu de PCFSoftShadowMap) : ombres à peine moins douces
+    // mais nettement moins coûteuses à chaque frame.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
   }
 
   _initScene() {
@@ -398,7 +413,7 @@ export class Scene3D {
     const actions = {};
     for (const k in this.charClips) {
       const a = mixer.clipAction(this.charClips[k]);
-      if (k === 'kick' || k === 'volley' || k === 'slide' || k === 'dive') {
+      if (k === 'kick' || k === 'volley' || k === 'slide' || k === 'standTackle' || k === 'dive') {
         a.setLoop(THREE.LoopOnce, 1);
         a.clampWhenFinished = true;        // fige la pose finale tant que l'état dure
       }
@@ -440,6 +455,8 @@ export class Scene3D {
 
     if (p.sl && e.actions.slide) {
       this._fadeTo(e, 'slide', 0.1);
+    } else if (p.stk && e.actions.standTackle) {
+      this._fadeTo(e, 'standTackle', 0.08);
     } else if (p.dv && e.actions.dive) {
       this._fadeTo(e, 'dive', 0.1);
     } else if (e.oneT > 0) {
@@ -625,7 +642,7 @@ export class Scene3D {
         kneeL: lL.knee, kneeR: lR.knee, elbowL: aL.elbow, elbowR: aR.elbow,
       },
       phase: Math.random() * 6, last: new THREE.Vector3(), lean: 0, yaw: 0,
-      kickT: 0, voT: 0, slideAmt: 0, wasKa: false, wasVo: false,
+      kickT: 0, voT: 0, slideAmt: 0, standT: 0, wasKa: false, wasVo: false, wasStk: false,
     };
   }
 
@@ -649,14 +666,15 @@ export class Scene3D {
 
     // Ballon
     const bx = sx(state.ball.x), bz = sz(state.ball.y), by = BALL_R + (state.ball.z || 0) * SC;
-    const nb = new THREE.Vector3(bx, by, bz);
-    const moved = nb.clone().sub(this._ballPrev);
+    const nb = this._ballNow.set(bx, by, bz);
+    this._vMoved.copy(nb).sub(this._ballPrev);
+    const mvx = this._vMoved.x, mvz = this._vMoved.z;
     this.ball.position.copy(nb);
     // Roulement du ballon
-    const md = Math.hypot(moved.x, moved.z);
+    const md = Math.hypot(mvx, mvz);
     if (md > 0.001) {
-      const axis = new THREE.Vector3(moved.z, 0, -moved.x).normalize();
-      this.ball.rotateOnWorldAxis(axis, md / BALL_R);
+      this._vAxis.set(mvz, 0, -mvx).normalize();
+      this.ball.rotateOnWorldAxis(this._vAxis, md / BALL_R);
     }
     this._ballPrev.copy(nb);
 
@@ -675,7 +693,7 @@ export class Scene3D {
       e.root.visible = !p.off;
       if (p.off) continue;
       const px = sx(p.x), pz = sz(p.y);
-      const pos = new THREE.Vector3(px, 0, pz);
+      const pos = this._vPos.set(px, 0, pz);
 
       // Orientation lissée vers la direction de déplacement/regard
       const dx = Math.cos(p.f), dz = Math.sin(p.f);
@@ -703,8 +721,11 @@ export class Scene3D {
         e.wasKa = !!p.ka;
         if (p.vo && !e.wasVo) e.voT = 0.85;
         e.wasVo = !!p.vo;
+        if (p.stk && !e.wasStk) e.standT = 0.35;
+        e.wasStk = !!p.stk;
         if (e.kickT > 0) e.kickT -= dt;
         if (e.voT > 0) e.voT -= dt;
+        if (e.standT > 0) e.standT -= dt;
         e.slideAmt += ((p.sl ? 1 : 0) - e.slideAmt) * Math.min(1, dt * 10);
         const targetLean = p.dv ? 1.25 : 0;
         e.lean += (targetLean - e.lean) * Math.min(1, dt * 12);
@@ -746,6 +767,17 @@ export class Scene3D {
           kneeR = 0.06;                               // jambe tendue vers le ballon
           kneeL = 1.25 * a;                           // jambe d'appui repliée dessous
           elbowL = elbowR = 0.3;
+        } else if (e.standT > 0) {
+          // TACLE DEBOUT : pique du pied avant, buste penché, joueur reste sur ses appuis
+          const u = 1 - e.standT / 0.35;
+          const poke = Math.sin(u * Math.PI);         // le pied sort puis revient
+          bodyRotX = 0.35 * poke + e.lean;            // léger plongée du buste vers l'avant
+          legR = 0.85 * poke;                         // jambe tendue vers le ballon
+          legL = -0.15 * poke;
+          kneeR = 0.1;                                // pointe de pied tendue
+          kneeL = 0.35 * poke;
+          armL = 0.5 * poke; armR = -0.5 * poke;      // bras qui contrebalancent
+          elbowL = elbowR = 0.5;
         } else if (e.kickT > 0) {
           // FRAPPE : jambe armée en arrière (genou plié) puis fouettée, tendue à l'impact
           const u = 1 - e.kickT / 0.32;
@@ -774,7 +806,13 @@ export class Scene3D {
       const isHumanMate = p.c && p.t === ctx.myTeam && !isMine;
       e.ring.visible = isMine || isHumanMate;
       if (e.ring.visible) e.ring.material.color.setHex(isMine ? 0xffd23f : 0xffffff);
-      if (isMine) controlled = { pos, dir: new THREE.Vector3(dx, 0, dz), team: p.t };
+      if (isMine) {
+        // On copie (pas de référence) : _vPos est réutilisé par les joueurs suivants.
+        this._controlled.pos.copy(pos);
+        this._controlled.dir.set(dx, 0, dz);
+        this._controlled.team = p.t;
+        controlled = this._controlled;
+      }
 
       // Flash (refus de contrôle) : teinte rouge éphémère de l'anneau
       if (p.fl && !e.ring.visible) { e.ring.visible = true; e.ring.material.color.setHex(0xff3030); }
@@ -808,7 +846,8 @@ export class Scene3D {
   }
 
   _updateCamera(controlled, state, dt, aim, corner) {
-    let desiredPos, lookAt;
+    // Vecteurs scratch réutilisés : chaque branche les fixe entièrement via .set().
+    const desiredPos = this._desiredPos, lookAt = this._lookAt;
     if (corner && aim == null) {
       // VUE DE CORNER : caméra placée derrière le but attaqué, en hauteur, qui
       // cadre toute la surface. Lisible aussi bien en défense (on voit les
@@ -817,15 +856,15 @@ export class Scene3D {
       const b = this.ball.position;
       const side = b.x < 0 ? -1 : 1;               // but attaqué : -HW ou +HW
       const goalX = side * HW;
-      desiredPos = new THREE.Vector3(goalX + side * 13, 13, b.z * 0.5);
-      lookAt = new THREE.Vector3(goalX - side * 13, 1, b.z * 0.15);
+      desiredPos.set(goalX + side * 13, 13, b.z * 0.5);
+      lookAt.set(goalX - side * 13, 1, b.z * 0.15);
     } else if (controlled && aim != null) {
       // MODE VISÉE (remise en jeu figée) : caméra orbitale derrière le tireur,
       // pilotée par le joystick — on balaye le terrain pour choisir sa passe.
       const p = controlled.pos;
       const dx = Math.cos(aim), dz = Math.sin(aim);   // monde (x,y) -> scène (X,Z)
-      desiredPos = new THREE.Vector3(p.x - dx * 8.5, 4.6, p.z - dz * 8.5);
-      lookAt = new THREE.Vector3(p.x + dx * 14, 0.8, p.z + dz * 14);
+      desiredPos.set(p.x - dx * 8.5, 4.6, p.z - dz * 8.5);
+      lookAt.set(p.x + dx * 14, 0.8, p.z + dz * 14);
     } else if (controlled) {
       // Caméra 3e personne STABLE qui cadre TOUJOURS le joueur ET le ballon.
       // Son ORIENTATION dépend de la possession :
@@ -853,8 +892,8 @@ export class Scene3D {
         const dist = 9 + spread * 0.55;
         const height = 5.4 + spread * 0.4;
         const midZ = b.z * 0.6 + p.z * 0.4;
-        desiredPos = new THREE.Vector3(rearX - atk * dist, height, midZ * 0.9);
-        lookAt = new THREE.Vector3(b.x * 0.7 + p.x * 0.3, 0.5, b.z * 0.7 + p.z * 0.3);
+        desiredPos.set(rearX - atk * dist, height, midZ * 0.9);
+        lookAt.set(b.x * 0.7 + p.x * 0.3, 0.5, b.z * 0.7 + p.z * 0.3);
       } else {
         // DÉFENSE : caméra derrière le joueur contrôlé, dans l'axe qui pointe
         // vers le ballon → le ballon reste cadré devant. Comme le joystick est
@@ -866,8 +905,8 @@ export class Scene3D {
         const s = Math.min(45, spread);
         const dist = 9 + s * 0.5;
         const height = 5.4 + s * 0.38;
-        desiredPos = new THREE.Vector3(p.x - ax * dist, height, p.z - az * dist);
-        lookAt = new THREE.Vector3(p.x * 0.4 + b.x * 0.6, 0.5, p.z * 0.4 + b.z * 0.6);
+        desiredPos.set(p.x - ax * dist, height, p.z - az * dist);
+        lookAt.set(p.x * 0.4 + b.x * 0.6, 0.5, p.z * 0.4 + b.z * 0.6);
       }
 
       // Orbite manuelle : on fait pivoter la position de la caméra autour du
@@ -884,8 +923,8 @@ export class Scene3D {
     } else {
       // Caméra de retransmission : suit le ballon en diagonale
       const b = this.ball.position;
-      desiredPos = new THREE.Vector3(b.x - 6, 16, b.z - 22);
-      lookAt = new THREE.Vector3(b.x, 0, b.z + 4);
+      desiredPos.set(b.x - 6, 16, b.z - 22);
+      lookAt.set(b.x, 0, b.z + 4);
     }
     // Amortissement exponentiel indépendant du framerate.
     // La cible (le ballon) est suivie plus vite que la position : même sur un

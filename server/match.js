@@ -93,6 +93,7 @@ class Match {
       sprint: PHYS.SPRINT_MAX,
       tackleCd: 0, diveCd: 0, kickCd: 0, stunned: 0,
       slideT: 0, slideHit: false,            // glissade en cours / contact déjà résolu
+      standT: 0,                             // minuterie d'animation du tacle debout (diffusée)
       kickAnimT: 0, volleyT: 0,              // minuteries d'animation (diffusées)
       yellows: 0, sentOff: false,            // discipline (cartons)
       input: { mx: 0, my: 0, sprint: false },   // dernier input humain
@@ -456,6 +457,7 @@ class Match {
     if (this.phase === 'setpiece' || this.restartProtect > 0 || this.restartFrozen) return;
     if (p.tackleCd > 0 || p.stunned > 0 || p.slideT > 0) return;
     p.tackleCd = PHYS.STAND_TACKLE_COOLDOWN;
+    p.standT = 0.35;              // geste de pique visible même si le ballon n'est pas atteint
     p.flash = 0.2;
     const b = this.ball;
     const face = { x: Math.cos(p.facing), y: Math.sin(p.facing) };
@@ -942,6 +944,7 @@ class Match {
     p.stunned = Math.max(0, p.stunned - dt);
     p.diving = Math.max(0, p.diving - dt);
     p.slideT = Math.max(0, p.slideT - dt);
+    p.standT = Math.max(0, p.standT - dt);
     p.kickAnimT = Math.max(0, p.kickAnimT - dt);
     p.volleyT = Math.max(0, p.volleyT - dt);
     // Jauge de sprint
@@ -1391,6 +1394,7 @@ class Match {
       st: p.stunned > 0 ? 1 : 0,
       dv: p.diving > 0 ? 1 : 0,
       sl: p.slideT > 0 ? 1 : 0,      // tacle glissé
+      stk: p.standT > 0 ? 1 : 0,     // tacle debout (pique)
       ka: p.kickAnimT > 0 ? 1 : 0,   // frappe (mouvement de jambe)
       vo: p.volleyT > 0 ? 1 : 0,     // retournée acrobatique
       yc: p.yellows,                 // cartons jaunes

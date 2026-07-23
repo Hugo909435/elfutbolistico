@@ -225,19 +225,38 @@ function interpState() {
   return blendSnaps(a.s, b.s, t);
 }
 
+// Tampons réutilisés d'une frame à l'autre : blendSnaps est appelé à chaque
+// frame de rendu (~60 Hz). Allouer un objet par joueur + une Map à chaque appel
+// nourrissait le ramasse-miettes et provoquait des micro-saccades. On réutilise
+// ici des objets persistants (le résultat n'est consommé que par scene.update,
+// synchronement, dans la même frame — la réutilisation est donc sûre).
+const _paIndex = new Map();                 // pid -> joueur du snapshot A (réutilisée)
+const _blendPlayers = new Map();            // pid -> objet joueur de sortie réutilisable
+const _blendResult = { players: [], ball: {} };
+
 function blendSnaps(pa, pb, t) {
-  const map = new Map(pa.players.map(p => [p.i, p]));
-  const players = pb.players.map(cp => {
-    const pp = map.get(cp.i) || cp;
-    return { ...cp, x: lerp(pp.x, cp.x, t), y: lerp(pp.y, cp.y, t), f: angleLerp(pp.f, cp.f, t) };
-  });
-  const ball = {
-    ...pb.ball,
-    x: lerp(pa.ball.x, pb.ball.x, t),
-    y: lerp(pa.ball.y, pb.ball.y, t),
-    z: lerp(pa.ball.z, pb.ball.z, t),
-  };
-  return { ...pb, players, ball };
+  _paIndex.clear();
+  for (const p of pa.players) _paIndex.set(p.i, p);
+
+  const out = _blendResult.players;
+  out.length = 0;
+  for (const cp of pb.players) {
+    const pp = _paIndex.get(cp.i) || cp;
+    let e = _blendPlayers.get(cp.i);
+    if (!e) { e = {}; _blendPlayers.set(cp.i, e); }
+    Object.assign(e, cp);                   // copie tous les champs bruts…
+    e.x = lerp(pp.x, cp.x, t);              // …puis écrase les champs interpolés
+    e.y = lerp(pp.y, cp.y, t);
+    e.f = angleLerp(pp.f, cp.f, t);
+    out.push(e);
+  }
+
+  const ball = _blendResult.ball;
+  Object.assign(ball, pb.ball);
+  ball.x = lerp(pa.ball.x, pb.ball.x, t);
+  ball.y = lerp(pa.ball.y, pb.ball.y, t);
+  ball.z = lerp(pa.ball.z, pb.ball.z, t);
+  return _blendResult;
 }
 
 function loop() {
