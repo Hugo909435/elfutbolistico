@@ -44,7 +44,7 @@
     GK_SPEED: 108,
     BALL_RADIUS: 7,
     BALL_FRICTION: 0.72,         // friction au sol (par seconde, exponentielle)
-    BALL_AIR_FRICTION: 0.4,
+    BALL_AIR_FRICTION: 0.75,     // traînée en l'air (faible : les centres portent)
     WALL_RESTITUTION: 0.55,      // rebond sur les bords hors-jeu (décor)
     POST_RESTITUTION: 0.7,
     POSSESS_RADIUS: 24,          // distance de prise de balle
@@ -53,13 +53,27 @@
     KICK_OFFSET: 16,             // le ballon est posé devant le joueur porteur
     MAX_SHOT_POWER: 720,
     MIN_SHOT_POWER: 260,
-    PASS_POWER: 430,
+    SHOT_SLOWMO: 0.32,           // facteur de ralenti global pendant la visée d'un tir
+    GOAL_TOP_Z: 26,              // hauteur de la barre en z (2,6 m — alignée sur la cage 3D)
+    PASS_POWER: 430,             // puissance de passe SANS cible (dégagement dirigé)
+    PASS_ARRIVE: 250,            // vitesse d'ARRIVÉE visée d'une passe ciblée (contrôlable)
+    PASS_MIN: 280,               // bornes de puissance d'une passe dosée
+    PASS_MAX: 580,
+    CONTROL_SPEED: 260,          // au-delà : première touche d'amorti avant le contrôle
     LONG_PASS_POWER: 620,
-    CROSS_POWER: 620,            // centre tendu (borne de vitesse, cf. tryCross)
+    CROSS_POWER: 620,            // centre en cloche (borne de vitesse, cf. _tryLongCross)
+    LONG_MIN_RANGE: 240,         // ballon long dosé : portée à jauge vide (dégagement court)
+    LONG_MAX_RANGE: 640,         // ballon long dosé : portée à pleine jauge (dégagement lointain)
     HEADER_POWER: 480,
     TACKLE_RANGE: 40,
+    TACKLE_REACH: 26,            // distance de CONTACT réel avec le ballon pendant la glissade
     TACKLE_COOLDOWN: 1.2,
     TACKLE_FOUL_CHANCE: 0.15,
+    STAND_TACKLE_REACH: 44,      // tacle debout : portée du pique (pas de glissade)
+    STAND_TACKLE_COOLDOWN: 0.35, // récupération rapide (ne doit pas bloquer un glissé qui suit)
+    STAND_TACKLE_FOUL_CHANCE: 0.07, // plus sûr que le tacle glissé
+    STEAL_REACH: 20,             // distance pour récupérer un ballon dribblé en LUI COURANT dessus (sans tacle)
+    STEAL_MIN_SPEED: 70,         // il faut courir (pas marcher) pour arracher le ballon au contact
     DIVE_COOLDOWN: 1.4,
     DIVE_RANGE: 90,
     DIVE_SPEED: 340,
@@ -72,6 +86,37 @@
   const AIR = {
     GRAVITY: 900,                // unités/s^2 sur l'axe z
   };
+
+  // ---------------------------------------------------------------------------
+  // Frappe chronométrée EN DEUX TEMPS (un seul bouton) :
+  //  1. MAINTENIR Tir : la jauge de puissance se charge. RELÂCHER = puissance
+  //     verrouillée (on choisit d'abord la force, tranquillement).
+  //  2. La FLÈCHE au sol devant le tireur balaie alors rapidement autour de
+  //     l'axe du but, compte à rebours de TIME_MAX secondes. RÉAPPUYER =
+  //     frappe dans la direction de la flèche ; à zéro le tir part tout seul.
+  // La puissance fait tout : pleine charge depuis le milieu de terrain = la
+  // barre ; pleine charge près du but = au-dessus ; pas assez chargé de loin =
+  // la frappe meurt avant la cage. Fonctions partagées serveur/client.
+  // ---------------------------------------------------------------------------
+  const SHOT = {
+    TIME_MAX: 3.0,        // fenêtre de VISÉE (s, temps réel) avant frappe auto
+    CHARGE_TIME: 1.2,     // durée de maintien pour la pleine puissance
+    CHARGE_HOLD_MAX: 2.5, // maintien trop long : la puissance se verrouille seule
+    SWEEP_PERIOD: 0.85,   // durée d'un aller-retour de la flèche
+    SWEEP_ANG: 0.55,      // amplitude du balayage (rad) autour de l'axe du but
+    RISE: 425,            // élévation pleine puissance — calibrée pour faire la
+                          // barre depuis le coin de la ligne médiane (~600 u)
+    MIN_SPEED: 70,        // frappe sans charge : petite pichenette qui meurt vite
+  };
+  // Décalage angulaire de la flèche (rad, -SWEEP_ANG..+SWEEP_ANG) : onde
+  // triangulaire qui démarre au centre (plein axe du but).
+  function shotSweep(age) {
+    const u = (age / SHOT.SWEEP_PERIOD + 0.25) % 1;
+    const tri = u < 0.5 ? u * 2 : 2 - u * 2;
+    return (tri * 2 - 1) * SHOT.SWEEP_ANG;
+  }
+  // Charge de la jauge de puissance (0..1) selon la durée de maintien.
+  function shotCharge(age) { return Math.min(1, age / SHOT.CHARGE_TIME); }
 
   // ---------------------------------------------------------------------------
   // Formats de match : tous les matchs se jouent à 8 vs 8 sur le terrain
@@ -112,7 +157,8 @@
   }
 
   return {
-    FIELD, PHYS, AIR, FORMATS, DIFFICULTY, MATCH,
+    FIELD, PHYS, AIR, FORMATS, DIFFICULTY, MATCH, SHOT,
     clamp, dist2, dist, len, norm, lerp, angleLerp,
+    shotSweep, shotCharge,
   };
 });

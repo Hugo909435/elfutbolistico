@@ -34,6 +34,8 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.use(express.static(path.join(__dirname, '..', 'public')));
 // Three.js servi en local (module ESM) — pas de CDN, fonctionne hors-ligne
 app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'build')));
+// Addons Three.js (FBXLoader, SkeletonUtils…) pour le personnage Mixamo
+app.use('/vendor/three-addons', express.static(path.join(__dirname, '..', 'node_modules', 'three', 'examples', 'jsm')));
 
 const PORT = Number(process.env.PORT) || 3000;
 const LAN_IP = getLanIp();

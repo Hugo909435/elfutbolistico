@@ -131,21 +131,31 @@ button.choose-team.team-b { background: rgba(255,77,77,0.25); }
 }
 .act-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
 .act-btn.pass { background: #2f9e57; }
-.act-btn.cross { background: #6a4fd0; }
 .act-btn.long { background: #c97b1e; }
 .act-btn.shoot { background: #d23b3b; width: 78px; height: 78px; font-size: 15px; }
 .act-btn.tackle { background: #555; }
-.act-btn.sprint { position: absolute; bottom: 120px; left: 34px; width: 64px; height: 64px; background: #1f7ad2; }
 .act-btn.gk-dive { background: #d2a11f; }
 
-.sprint-gauge, .power-gauge {
+.power-gauge {
   position: absolute; height: 6px; border-radius: 3px; background: rgba(0,0,0,0.5); overflow: hidden;
 }
-.sprint-gauge { bottom: 108px; left: 34px; width: 64px; }
-.sprint-gauge i { display: block; height: 100%; width: 100%; background: #4fc3f7; transition: width .1s; }
 .power-gauge { bottom: 165px; right: 20px; width: 146px; opacity: 0; transition: opacity .1s; }
 .power-gauge.show { opacity: 1; }
 .power-gauge i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#ffd23f,#ff4d4d); }
+
+/* HUD de frappe chronométrée : compte à rebours + astuce.
+   (La flèche de visée balaie en 3D, au sol devant le tireur.) */
+.shot-target {
+  position: absolute; top: 13%; left: 50%; transform: translateX(-50%);
+  pointer-events: none; opacity: 0; transition: opacity .12s; z-index: 6;
+}
+.shot-target.show { opacity: 1; }
+/* Compte à rebours (3.0 -> 0.0) */
+.st-count {
+  text-align: center; font-size: 30px; font-weight: 800;
+  color: #ffd23f; text-shadow: 0 2px 6px #000; font-variant-numeric: tabular-nums;
+}
+.st-hint { margin-top: 4px; text-align: center; font-size: 12px; color: #fff; text-shadow: 0 1px 3px #000; }
 
 /* Fin de match */
 .end-score { font-size: 48px; font-weight: 800; text-align: center; margin: 18px 0; }
@@ -160,3 +170,19 @@ button.choose-team.team-b { background: rgba(255,77,77,0.25); }
   .act-btn.shoot { width: 66px; height: 66px; }
   .hud-message { font-size: 26px; }
 }
+
+/* ===================== Chargement du personnage 3D ===================== */
+.lobby-loading { text-align: center; font-size: 13px; opacity: 0.8; margin-bottom: 8px; }
+.load-overlay {
+  position: absolute; inset: 0; display: none;
+  align-items: center; justify-content: center;
+  background: rgba(10, 18, 28, 0.9); z-index: 50;
+}
+.load-overlay.show { display: flex; }
+.load-box { display: flex; flex-direction: column; align-items: center; gap: 14px; color: #fff; font-size: 15px; }
+.load-spinner {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.25); border-top-color: #ffd23f;
+  animation: load-spin 0.9s linear infinite;
+}
+@keyframes load-spin { to { transform: rotate(360deg); } }

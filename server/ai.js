@@ -47,6 +47,20 @@ function cornerTarget(p, spX, spTeam) {
   return { tx: gx + dir * (55 + Math.abs(off) * 20), ty: FIELD.H / 2 + off * 45 };
 }
 
+// Centre du but défendu par l'équipe de `p`.
+function ownGoalPos(team) {
+  return { x: team === 'A' ? 0 : FIELD.W, y: FIELD.H / 2 };
+}
+
+// Les 3 défenseurs (index 1..3) forment le mur ; slot -1/0/1 = position dans
+// le mur (perpendiculaire à la ligne ballon->but).
+function isWallPlayer(p) { return p.role === 'DEF'; }
+function wallSlot(p) { return S.clamp(p.index - 2, -1, 1); }
+
+// Portée max (px) d'un coup franc pour lever un mur / peupler la surface.
+// ~10 px = 1 m sur ce terrain (FIELD.W 1050 ≈ 105 m).
+const FK_CLOSE = 340;
+
 // Position cible d'un joueur de champ (hors tireur/gardien) sur un coup de
 // pied arrêté, selon le type. Le camp adverse respecte la distance
 // réglementaire (9 m) : PERSONNE ne charge le tireur. Partagé par la phase de
@@ -68,12 +82,53 @@ function setPieceFieldTarget(p, type, spX, spY, spTeam) {
     tx = p.home.x; ty = p.home.y;
     if (p.team === 'A') tx = Math.min(tx, FIELD.W / 2 - 35);
     else tx = Math.max(tx, FIELD.W / 2 + 35);
-  } else if (type === 'throwin' && p.team === spTeam) {
-    // Coéquipiers du remetteur : proposer une solution courte
-    tx = S.lerp(p.home.x, spX, 0.6);
-    ty = S.lerp(p.home.y, spY, 0.6);
+  } else if (type === 'throwin') {
+    const dir = spTeam === 'A' ? 1 : -1;
+    const off = (p.index % 3) - 1;                 // -1, 0, 1
+    if (p.team === spTeam) {
+      // Coéquipiers du remetteur : s'écarter du remetteur et proposer des
+      // solutions À HAUTEUR ou DEVANT (sinon tout le monde reste derrière
+      // et la touche est aussitôt perdue).
+      tx = spX + dir * (55 + Math.abs(off) * 45);
+      ty = S.clamp(spY + off * 70, 40, FIELD.H - 40);
+    } else {
+      tx = p.home.x;
+      ty = S.lerp(p.home.y, spY, 0.25);
+    }
+  } else if (type === 'freekick') {
+    const dir = spTeam === 'A' ? 1 : -1;
+    const oppGoalX = spTeam === 'A' ? FIELD.W : 0;
+    const distGoal = S.dist(spX, spY, oppGoalX, FIELD.H / 2);
+    const off = (p.index % 3) - 1;                 // -1, 0, 1
+    if (p.team === spTeam) {
+      // Équipe qui joue : offrir des options UTILES devant le ballon au lieu
+      // de rester en formation derrière le tireur.
+      if (distGoal < FK_CLOSE) {
+        // Coup franc proche : peupler la surface pour reprendre le centre.
+        tx = oppGoalX - dir * (FIELD.PENALTY_W * 0.55 + Math.abs(off) * 30);
+        ty = FIELD.H / 2 + off * 60;
+      } else {
+        // Coup franc lointain : solutions de relance vers l'avant + largeur.
+        tx = spX + dir * (70 + Math.abs(off) * 55);
+        ty = S.clamp(spY + off * 95, 40, FIELD.H - 40);
+      }
+    } else if (distGoal < FK_CLOSE && isWallPlayer(p)) {
+      // Équipe qui défend, coup franc à portée : les défenseurs montent un
+      // mur à 9 m, sur la ligne ballon -> but.
+      const g = ownGoalPos(p.team);
+      const n = S.norm(g.x - spX, g.y - spY);      // ballon -> but
+      const perp = { x: -n.y, y: n.x };
+      const s = wallSlot(p);
+      tx = spX + n.x * 96 + perp.x * s * 17;
+      ty = spY + n.y * 96 + perp.y * s * 17;
+    } else {
+      // Autres défenseurs : tenir la formation entre le ballon et le but.
+      const g = ownGoalPos(p.team);
+      tx = S.lerp(p.home.x, g.x, 0.15);
+      ty = S.lerp(p.home.y, spY, 0.3);
+    }
   } else {
-    // Défense / autres cas : positions de formation
+    // Autres cas (six mètres…) : positions de formation
     tx = p.home.x;
     ty = S.lerp(p.home.y, spY, 0.25);
   }
@@ -254,8 +309,8 @@ function ownerDecision(match, p, canDecide) {
     const fwd = { x: dir, y: (Math.random() - 0.5) * 0.8 };
     const mate = match._aimTeammate(p, fwd, 360);
     if (mate) { match.tryPass(p, fwd, distGoal > 500 ? 'long' : 'short'); return; }
-    // Sinon centre si sur l'aile
-    if ((p.y < 140 || p.y > FIELD.H - 140) && distGoal < 420) { match.tryCross(p, fwd); return; }
+    // Sinon centre si sur l'aile (passe longue = centre en cloche)
+    if ((p.y < 140 || p.y > FIELD.H - 140) && distGoal < 420) { match.tryPass(p, fwd, 'long'); return; }
   }
 
   // Passe opportuniste vers un coéquipier mieux placé (parfois)

@@ -66,17 +66,25 @@
       </div>
       <div id="config-readonly" class="config-readonly"></div>
 
+      <div id="lobby-loading" class="lobby-loading">⏳ Chargement des joueurs 3D… <span id="lobby-loading-pct">0 %</span></div>
       <div class="lobby-actions">
         <button id="btn-ready" class="btn">Je suis prêt</button>
         <button id="btn-start" class="btn primary">Lancer le match</button>
       </div>
-      <p class="hint">Astuce : pendant le match, tape un joueur de ton équipe pour le contrôler.</p>
     </div>
   </section>
 
   <!-- ===================== JEU ===================== -->
   <section id="screen-game" class="screen">
     <canvas id="game-canvas"></canvas>
+
+    <!-- Voile de chargement : match lancé avant la fin du téléchargement 3D -->
+    <div id="load-overlay" class="load-overlay">
+      <div class="load-box">
+        <div class="load-spinner"></div>
+        <div>Chargement des joueurs… <span id="load-overlay-pct">0 %</span></div>
+      </div>
+    </div>
 
     <!-- HUD -->
     <div class="hud-top">
@@ -99,14 +107,16 @@
     <!-- Boutons d'action -->
     <div id="action-buttons" class="action-buttons">
       <button data-act="pass" class="act-btn pass">Passe</button>
-      <button data-act="cross" class="act-btn cross">Centre</button>
       <button data-act="long" class="act-btn long">Longue</button>
       <button data-act="shoot" class="act-btn shoot">Tir</button>
       <button data-act="tackle" class="act-btn tackle">Tacle</button>
     </div>
-    <button id="btn-sprint" class="act-btn sprint">Sprint</button>
-    <div id="sprint-gauge" class="sprint-gauge"><i></i></div>
     <div id="power-gauge" class="power-gauge"><i></i></div>
+
+    <!-- Frappe chronométrée : compte à rebours (la flèche 3D balaie au sol devant le tireur) -->
+    <div id="shot-target" class="shot-target">
+      <div id="st-count" class="st-count">0%</div>
+    </div>
   </section>
 
   <!-- ===================== FIN DE MATCH ===================== -->
@@ -122,7 +132,10 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="shared.js"></script>
   <script type="importmap">
-    { "imports": { "three": "/vendor/three/three.module.js" } }
+    { "imports": {
+      "three": "/vendor/three/three.module.js",
+      "three/addons/": "/vendor/three-addons/"
+    } }
   </script>
   <script type="module" src="client.js"></script>
 </body>
