@@ -454,9 +454,17 @@ export class Scene3D {
     e.wasVo = !!p.vo;
 
     if (p.sl && e.actions.slide) {
-      this._fadeTo(e, 'slide', 0.1);
+      // Les clips de tacle Mixamo durent 1,5–2,7 s, bien plus que la fenêtre
+      // serveur (~0,55 s) : à vitesse 1× on ne voyait que l'appel debout et
+      // jamais la glissade. On accélère le clip pour qu'il se DÉROULE ENTIER
+      // dans la fenêtre (clampWhenFinished fige ensuite la pose au sol).
+      if (this._fadeTo(e, 'slide', 0.1)) {
+        e.actions.slide.timeScale = this.charClips.slide.duration / 0.5;
+      }
     } else if (p.stk && e.actions.standTackle) {
-      this._fadeTo(e, 'standTackle', 0.08);
+      if (this._fadeTo(e, 'standTackle', 0.08)) {
+        e.actions.standTackle.timeScale = this.charClips.standTackle.duration / 0.5;
+      }
     } else if (p.dv && e.actions.dive) {
       this._fadeTo(e, 'dive', 0.1);
     } else if (e.oneT > 0) {

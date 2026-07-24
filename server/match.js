@@ -176,6 +176,15 @@ class Match {
     }
   }
 
+  // Reconnexion : un humain revenu (nouveau socketId) reprend le joueur qu'il
+  // pilotait avant la coupure s'il est encore libre (repassé en IA pendant
+  // l'absence) ; sinon on lui en réassigne un automatiquement.
+  reclaim(socketId, team, pid) {
+    const p = this.players.find(pl => pl.pid === pid && pl.team === team);
+    if (p && !p.controlledBy && !p.sentOff) { p.controlledBy = socketId; return p.pid; }
+    return this.autoAssign(socketId, team);
+  }
+
   humanControls(team) {
     return this.players.filter(p => p.team === team && p.controlledBy);
   }

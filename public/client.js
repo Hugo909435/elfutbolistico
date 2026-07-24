@@ -8,7 +8,22 @@
 import { Scene3D, preloadCharacter } from './scene3d.js';
 
 const { FIELD, PHYS, clamp, lerp, len, norm, angleLerp } = window.SHARED;
-const socket = window.io();
+
+// Jeton de session persistant : identifie ce navigateur d'une connexion à
+// l'autre. Recharger la page (nouveau socket) permet ainsi de retrouver son
+// salon et le joueur qu'on pilotait, au lieu de repartir de l'accueil.
+function getSessionToken() {
+  let t = null;
+  try { t = localStorage.getItem('elfut_token'); } catch (e) { /* stockage bloqué */ }
+  if (!t) {
+    t = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+    try { localStorage.setItem('elfut_token', t); } catch (e) { /* ignore */ }
+  }
+  return t;
+}
+const sessionToken = getSessionToken();
+const socket = window.io({ auth: { token: sessionToken } });
 const $ = (id) => document.getElementById(id);
 
 // État local
@@ -93,7 +108,7 @@ document.querySelectorAll('.choose-team').forEach(btn => {
 });
 $('btn-ready').onclick = () => socket.emit('toggleReady');
 $('btn-start').onclick = () => socket.emit('startMatch');
-$('btn-leave').onclick = () => { socket.disconnect(); location.reload(); };
+$('btn-leave').onclick = () => { socket.emit('leaveRoom'); socket.disconnect(); location.reload(); };
 $('select-format').onchange = (e) => socket.emit('setFormat', { format: e.target.value });
 $('select-difficulty').onchange = (e) => socket.emit('setDifficulty', { difficulty: e.target.value });
 
@@ -133,6 +148,19 @@ socket.on('lobby', (state) => {
 });
 
 socket.on('returnLobby', () => show('lobby'));
+
+// Reprise après rechargement / reconnexion : on rebranche l'écran adéquat.
+// Les détails (équipe, hôte, score…) suivent via l'événement 'lobby'/'state'.
+socket.on('resumed', (info) => {
+  roomCode = info.code;
+  if (info.state === 'playing') {
+    snapBuf = []; curState = null; wasGk = false;
+    show('game');
+    if (!charReady) $('load-overlay').classList.add('show');
+  } else {
+    show('lobby');
+  }
+});
 
 // ==========================================================================
 // MATCH

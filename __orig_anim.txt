@@ -1,0 +1,76 @@
+﻿      const targetYaw = Math.atan2(dx, dz);
+      let dyaw = targetYaw - e.yaw;
+      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+      e.yaw += dyaw * (1 - Math.exp(-12 * dt));
+      e.root.rotation.y = e.yaw;
+
+      // Vitesse (pour l'animation de course) via d├®placement r├®el
+      const step = pos.distanceTo(e.last);
+      const speed = step / dt;                        // unit├®s sc├¿ne/s
+      const run = Math.min(1, speed / 11);            // 0 (arr├¬t) .. 1 (sprint)
+      e.phase += step * 4.2 + run * dt * 3;
+
+      // -- D├®tection des actions serveur (front montant -> anim locale) --
+      if (p.ka && !e.wasKa) e.kickT = 0.32;
+      e.wasKa = !!p.ka;
+      if (p.vo && !e.wasVo) e.voT = 0.85;
+      e.wasVo = !!p.vo;
+      if (e.kickT > 0) e.kickT -= dt;
+      if (e.voT > 0) e.voT -= dt;
+      e.slideAmt += ((p.sl ? 1 : 0) - e.slideAmt) * Math.min(1, dt * 10);
+      const targetLean = p.dv ? 1.25 : 0;
+      e.lean += (targetLean - e.lean) * Math.min(1, dt * 12);
+
+      // Pose de base : balancier de course (bras/jambes)
+      const swing = (0.35 + 0.75 * run) * Math.min(1, run * 3);
+      const s = Math.sin(e.phase);
+      let legL = s * swing, legR = -s * swing;
+      let armL = -s * swing * 0.7, armR = s * swing * 0.7;
+      let bodyRotX = e.lean;                                        // plongeon GK
+      let bodyY = Math.abs(Math.sin(e.phase)) * 0.06 * run - e.lean * 0.35;
+
+      if (e.voT > 0) {
+        // RETOURN├ëE ACROBATIQUE : saut + rotation arri├¿re compl├¿te, jambe fouett├®e
+        const u = 1 - e.voT / 0.85;
+        bodyY = Math.sin(u * Math.PI) * 1.05;
+        bodyRotX = -u * Math.PI * 2;
+        legR = -1.7 * Math.sin(u * Math.PI);
+        legL = 0.5 * Math.sin(u * Math.PI);
+        armL = 1.2; armR = -1.2;
+      } else if (e.slideAmt > 0.03) {
+        // TACLE GLISS├ë : corps couch├® en arri├¿re au ras du sol, jambe tendue
+        const a = e.slideAmt;
+        bodyRotX = -1.05 * a + e.lean;
+        bodyY = -0.52 * a;
+        legR = -1.5 * a;
+        legL = -0.8 * a;
+        armL = 0.9 * a; armR = -0.4 * a;
+      } else if (e.kickT > 0) {
+        // FRAPPE : jambe arm├®e en arri├¿re puis fouett├®e vers l'avant
+        const u = 1 - e.kickT / 0.32;
+        legR = u < 0.3 ? (u / 0.3) * 0.9 : 0.9 - ((u - 0.3) / 0.7) * 2.6;
+        armL = -0.6; armR = 0.4;
+      }
+
+      e.parts.legL.rotation.x = legL;
+      e.parts.legR.rotation.x = legR;
+      e.parts.armL.rotation.x = armL;
+      e.parts.armR.rotation.x = armR;
+      e.body.rotation.x = bodyRotX;
+      e.body.position.y = bodyY;
+
+      e.root.position.copy(pos);
+      e.last.copy(pos);
+
+      // Anneau de contr├┤le : jaune = moi, blanc = autre humain de mon ├®quipe
+      const isMine = p.c === ctx.mySocket;
+      const isHumanMate = p.c && p.t === ctx.myTeam && !isMine;
+      e.ring.visible = isMine || isHumanMate;
+      if (e.ring.visible) e.ring.material.color.setHex(isMine ? 0xffd23f : 0xffffff);
+      if (isMine) controlled = { pos, dir: new THREE.Vector3(dx, 0, dz), team: p.t };
+
+      // Flash (refus de contr├┤le) : teinte rouge ├®ph├®m├¿re de l'anneau
+      if (p.fl && !e.ring.visible) { e.ring.visible = true; e.ring.material.color.setHex(0xff3030); }
+    }
+

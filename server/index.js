@@ -69,6 +69,16 @@ app.get('/qr', async (req, res) => {
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 
+// Jetons de session : permettent à un joueur qui recharge la page (nouveau
+// socketId) de retrouver son salon et le joueur qu'il pilotait. Le client
+// génère un jeton persistant (localStorage) envoyé à la connexion. On garde
+// une correspondance jeton -> code de salon pour retrouver le membre.
+/** @type {Map<string, { code: string }>} */
+const sessions = new Map();
+// Fenêtre pendant laquelle un membre déconnecté reste réservé (rechargement,
+// coupure réseau brève). Passé ce délai, il est retiré pour de bon.
+const GRACE_MS = 45000;
+
 function genCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code;
@@ -90,8 +100,11 @@ class Room {
     this.loop = null;
   }
 
-  addMember(socketId, name) {
-    this.members.set(socketId, { name: name || 'Joueur', team: null, ready: false });
+  addMember(socketId, name, token) {
+    this.members.set(socketId, {
+      name: name || 'Joueur', team: null, ready: false,
+      token: token || null, connected: true, controlPid: null, graceTimer: null,
+    });
     if (!this.hostId || !this.members.has(this.hostId)) this.hostId = socketId;
   }
 
@@ -136,6 +149,65 @@ function getRoomOf(socket) {
   return code ? rooms.get(code) : null;
 }
 
+// Retrait définitif d'un membre (grâce expirée ou départ volontaire) : libère
+// son joueur, oublie sa session et supprime le salon s'il devient vide.
+function finalizeLeave(room, socketId) {
+  const m = room.members.get(socketId);
+  if (m) {
+    if (m.graceTimer) clearTimeout(m.graceTimer);
+    if (m.token) sessions.delete(m.token);
+  }
+  if (room.match) room.match.releaseControl(socketId);
+  room.removeMember(socketId);
+  if (room.members.size === 0) {
+    room.stopLoop();
+    rooms.delete(room.code);
+  } else {
+    broadcastLobby(room);
+  }
+}
+
+// Tente de reprendre une session existante à la connexion (page rechargée ou
+// reconnexion réseau). Retourne true si le joueur a été rebranché sur son salon.
+function attemptResume(socket, token) {
+  if (!token) return false;
+  const rec = sessions.get(token);
+  if (!rec) return false;
+  const room = rooms.get(rec.code);
+  if (!room) { sessions.delete(token); return false; }
+
+  // Retrouve le membre (encore indexé sous son ancien socketId) via son jeton.
+  let oldSid = null;
+  for (const [sid, m] of room.members) { if (m.token === token) { oldSid = sid; break; } }
+  if (oldSid == null) return false;
+
+  const m = room.members.get(oldSid);
+  if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
+  m.connected = true;
+
+  // Ré-indexe le membre sous le nouveau socketId.
+  room.members.delete(oldSid);
+  room.members.set(socket.id, m);
+  if (room.hostId === oldSid) room.hostId = socket.id;
+
+  socket.join(room.code);
+  socket.data.room = room.code;
+  socket.data.token = token;
+
+  // Match en cours : on reprend le joueur piloté avant la coupure (repassé en
+  // IA pendant l'absence) s'il est libre, sinon un autre joueur de l'équipe.
+  if (room.match && m.team && m.controlPid != null) {
+    m.controlPid = room.match.reclaim(socket.id, m.team, m.controlPid);
+  }
+
+  socket.emit('resumed', {
+    code: room.code, state: room.state,
+    format: room.format, difficulty: room.difficulty,
+  });
+  broadcastLobby(room);
+  return true;
+}
+
 // -----------------------------------------------------------------------------
 // Boucle de match
 // -----------------------------------------------------------------------------
@@ -169,6 +241,11 @@ function startMatch(room) {
 // Connexions Socket.io
 // -----------------------------------------------------------------------------
 io.on('connection', (socket) => {
+  // Jeton de session envoyé par le client (persisté côté navigateur).
+  const token = (socket.handshake.auth && socket.handshake.auth.token) || null;
+  socket.data.token = token;
+  // Si une session est encore active, on rebranche le joueur sur son salon.
+  attemptResume(socket, token);
 
   socket.on('createRoom', ({ name } = {}, cb) => {
     const code = genCode();
@@ -190,7 +267,8 @@ io.on('connection', (socket) => {
   function joinRoom(socket, room, name) {
     socket.join(room.code);
     socket.data.room = room.code;
-    room.addMember(socket.id, name);
+    room.addMember(socket.id, name, socket.data.token);
+    if (socket.data.token) sessions.set(socket.data.token, { code: room.code });
     broadcastLobby(room);
   }
 
@@ -276,19 +354,27 @@ io.on('connection', (socket) => {
     else socket.emit('switchDenied', res);
   });
 
+  // ---- Départ volontaire (bouton Quitter) -----------------------------------
+  // Retrait immédiat + oubli de la session : recharger ne fera PAS revenir.
+  socket.on('leaveRoom', () => {
+    const room = getRoomOf(socket);
+    if (!room) return;
+    socket.leave(room.code);
+    socket.data.room = null;
+    finalizeLeave(room, socket.id);
+  });
+
   // ---- Déconnexion ----------------------------------------------------------
   socket.on('disconnect', () => {
     const room = getRoomOf(socket);
     if (!room) return;
-    // Le(s) joueur(s) contrôlé(s) repasse(nt) en IA
+    const m = room.members.get(socket.id);
+    if (!m) return;
+    // Le(s) joueur(s) contrôlé(s) repasse(nt) en IA le temps de l'absence…
     if (room.match) room.match.releaseControl(socket.id);
-    room.removeMember(socket.id);
-    if (room.members.size === 0) {
-      room.stopLoop();
-      rooms.delete(room.code);
-    } else {
-      broadcastLobby(room);
-    }
+    m.connected = false;
+    // …mais le membre reste réservé (grâce) pour permettre une reconnexion.
+    m.graceTimer = setTimeout(() => finalizeLeave(room, socket.id), GRACE_MS);
   });
 });
 
