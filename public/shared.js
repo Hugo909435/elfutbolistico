@@ -53,7 +53,7 @@
     KICK_OFFSET: 16,             // le ballon est posé devant le joueur porteur
     MAX_SHOT_POWER: 720,
     MIN_SHOT_POWER: 260,
-    SHOT_SLOWMO: 0.32,           // facteur de ralenti global pendant la visée d'un tir
+    SHOT_SLOWMO: 0.12,           // facteur de ralenti global pendant la visée d'un tir
     GOAL_TOP_Z: 26,              // hauteur de la barre en z (2,6 m — alignée sur la cage 3D)
     PASS_POWER: 430,             // puissance de passe SANS cible (dégagement dirigé)
     PASS_ARRIVE: 250,            // vitesse d'ARRIVÉE visée d'une passe ciblée (contrôlable)

@@ -17,6 +17,16 @@ Puis ouvrir **http://localhost:3000** sur chaque téléphone (les téléphones d
 
 `npm run dev` relance automatiquement à chaque modification.
 
+## Déploiement (VPS + nom de domaine)
+
+- `PORT` : port d'écoute (défaut `3000`).
+- `PUBLIC_URL` : URL publique complète (ex. `https://elfutbolistico.mondomaine.com`) affichée dans le QR code et le lien de partage à la place de l'IP LAN auto-détectée. À définir en prod.
+- Le serveur écoute sur `0.0.0.0` : à mettre derrière un reverse proxy (Nginx/Caddy) qui gère TLS et **transmet l'upgrade WebSocket** (obligatoire pour Socket.io), et à garder vivant avec un gestionnaire de process (pm2, systemd…).
+
+```bash
+PORT=3000 PUBLIC_URL=https://elfutbolistico.mondomaine.com npm start
+```
+
 ## Boucle de jeu
 
 1. **Accueil** : créer une partie (code à 5 caractères) ou rejoindre avec un code.

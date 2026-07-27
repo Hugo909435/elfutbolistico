@@ -39,8 +39,12 @@ app.use('/vendor/three-addons', express.static(path.join(__dirname, '..', 'node_
 
 const PORT = Number(process.env.PORT) || 3000;
 const LAN_IP = getLanIp();
+// En production (VPS + nom de domaine, souvent derrière un reverse proxy sur
+// 80/443), PUBLIC_URL fixe l'URL externe affichée (QR code, lien de partage) —
+// sinon on retombe sur l'IP LAN + port, pratique en dev sur réseau local.
+const PUBLIC_URL = process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') : null;
 let ACTIVE_PORT = PORT;                              // port réellement utilisé (peut changer si occupé)
-const gameUrl = () => `http://${LAN_IP}:${ACTIVE_PORT}`;
+const gameUrl = () => PUBLIC_URL || `http://${LAN_IP}:${ACTIVE_PORT}`;
 
 // Page /qr : affiche le QR code en grand pour scanner avec un téléphone.
 app.get('/qr', async (req, res) => {

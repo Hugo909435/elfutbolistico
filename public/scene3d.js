@@ -81,6 +81,20 @@ export function preloadCharacter(onProgress) {
       const f = animFbx[i];
       if (f && f.animations.length) clips[k] = prepClip(f.animations[0], k);
     });
+    // Le clip Mixamo du tacle glissé ne se contente pas de plonger : il finit
+    // par un relevé complet (le joueur se redresse debout en ~1,8 s). Joué en
+    // entier puis accéléré pour tenir dans la fenêtre serveur (~0,5 s), on
+    // voyait donc le joueur plonger PUIS se relever à toute vitesse, ce qui
+    // ressemblait à une roulade. On coupe le clip juste après le point bas
+    // (le joueur couché au sol) pour que clampWhenFinished fige cette pose
+    // au lieu de la pose relevée de fin de clip.
+    if (clips.slide) clips.slide = THREE.AnimationUtils.subclip(clips.slide, 'slide', 0, 0.9, 1);
+    // Même souci pour le tacle DEBOUT : le clip complet enchaîne pique du pied
+    // (le joueur reste sur ses appuis, ~0,75 s) PUIS plonge au sol comme un
+    // tacle glissé. Joué en entier et accéléré ~5,5× pour tenir dans la
+    // fenêtre serveur (0,35 s), le geste était coupé en pleine chute — trop
+    // bref et trop rapide pour être perçu. On ne garde que la phase debout.
+    if (clips.standTackle) clips.standTackle = THREE.AnimationUtils.subclip(clips.standTackle, 'standTackle', 0, 0.75, 1);
     return { base, clips, scale };
   }).catch(err => {
     console.warn('Personnage FBX indisponible, joueurs procéduraux en repli :', err);
@@ -454,16 +468,17 @@ export class Scene3D {
     e.wasVo = !!p.vo;
 
     if (p.sl && e.actions.slide) {
-      // Les clips de tacle Mixamo durent 1,5–2,7 s, bien plus que la fenêtre
-      // serveur (~0,55 s) : à vitesse 1× on ne voyait que l'appel debout et
-      // jamais la glissade. On accélère le clip pour qu'il se DÉROULE ENTIER
-      // dans la fenêtre (clampWhenFinished fige ensuite la pose au sol).
+      // Le clip (déjà rogné à la phase de plongeon, voir preloadCharacter)
+      // doit se DÉROULER ENTIER pendant la fenêtre serveur du tacle glissé
+      // (0,55 s, cf. p.slideT côté serveur) pour que clampWhenFinished fige
+      // le joueur couché au sol au lieu de l'interrompre en pleine chute.
       if (this._fadeTo(e, 'slide', 0.1)) {
-        e.actions.slide.timeScale = this.charClips.slide.duration / 0.5;
+        e.actions.slide.timeScale = this.charClips.slide.duration / 0.55;
       }
     } else if (p.stk && e.actions.standTackle) {
+      // Idem pour le tacle debout : fenêtre serveur de 0,35 s (cf. p.standT).
       if (this._fadeTo(e, 'standTackle', 0.08)) {
-        e.actions.standTackle.timeScale = this.charClips.standTackle.duration / 0.5;
+        e.actions.standTackle.timeScale = this.charClips.standTackle.duration / 0.35;
       }
     } else if (p.dv && e.actions.dive) {
       this._fadeTo(e, 'dive', 0.1);
@@ -861,11 +876,16 @@ export class Scene3D {
       // cadre toute la surface. Lisible aussi bien en défense (on voit les
       // attaquants et le centre arriver) qu'en attaque (on vise le point de
       // chute). Le tireur, lui (aim != null), garde sa vue de visée.
+      // La tribune derrière la cage (mur gris, cf. _buildStands) commence à
+      // M + standD/2 = 11 unités au-delà de la ligne de but : au-delà, la
+      // caméra se retrouve dans son emprise et le mur bouche la vue. On reste
+      // donc bien en-deçà (8) et on monte plus haut pour garder tout le
+      // rectangle des 16,50 m dans le cadre malgré le recul réduit.
       const b = this.ball.position;
       const side = b.x < 0 ? -1 : 1;               // but attaqué : -HW ou +HW
       const goalX = side * HW;
-      desiredPos.set(goalX + side * 13, 13, b.z * 0.5);
-      lookAt.set(goalX - side * 13, 1, b.z * 0.15);
+      desiredPos.set(goalX + side * 8, 16, b.z * 0.5);
+      lookAt.set(goalX - side * 14, 1, b.z * 0.15);
     } else if (controlled && aim != null) {
       // MODE VISÉE (remise en jeu figée) : caméra orbitale derrière le tireur,
       // pilotée par le joystick — on balaye le terrain pour choisir sa passe.

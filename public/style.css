@@ -135,6 +135,9 @@ button.choose-team.team-b { background: rgba(255,77,77,0.25); }
 .act-btn.shoot { background: #d23b3b; width: 78px; height: 78px; font-size: 15px; }
 .act-btn.tackle { background: #555; }
 .act-btn.gk-dive { background: #d2a11f; }
+/* Tireur de corner : seuls Passe / Longue restent utiles (doser + viser à la
+   flèche) — Tir/Tacle masqués pour ne pas prêter à confusion. */
+.act-btn.corner-hidden { display: none; }
 
 .power-gauge {
   position: absolute; height: 6px; border-radius: 3px; background: rgba(0,0,0,0.5); overflow: hidden;

@@ -228,6 +228,14 @@ function updateHud(snap) {
   else msgEl.classList.remove('show');
 
   setupActionButtons(mine && mine.gk);
+  // Tireur de corner : on ne lui laisse que Passe / Longue (la flèche au sol
+  // suit déjà la visée en mode figé, cf. loop()) — Tir/Tacle n'ont pas leur
+  // place ici et semaient la confusion (visée slow-mo ignorée par le serveur).
+  setCornerButtons(!!(mine && mine.fz && snap.rst === 'corner'));
+}
+function setCornerButtons(restricted) {
+  document.querySelectorAll('.action-buttons [data-act="shoot"], .action-buttons [data-act="tackle"], .action-buttons [data-act="dive"]')
+    .forEach(btn => btn.classList.toggle('corner-hidden', restricted));
 }
 
 function flashFeedback(text) {

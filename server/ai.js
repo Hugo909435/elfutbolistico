@@ -530,7 +530,11 @@ function goalkeeper(match, p, speed) {
     if (p.kickCd <= 0) match.tryPass(p, { x: dir, y: (Math.random() - 0.5) * 0.6 }, 'long');
     return;
   }
-  const targetY = S.clamp(S.lerp(FIELD.H / 2, b.y, 0.8), FIELD.GOAL_Y1 - 20, FIELD.GOAL_Y2 + 20);
+  // Le gardien ne se décale de l'axe du but que si le ballon est réellement
+  // dangereux (proche en X) — sinon il reste centré, même si le ballon est
+  // sur un côté du terrain (ex. sortie de corner à l'autre bout).
+  const danger = S.clamp(1 - Math.abs(b.x - goalX) / (FIELD.PENALTY_W * 2.4), 0, 1);
+  const targetY = S.clamp(S.lerp(FIELD.H / 2, b.y, 0.8 * danger), FIELD.GOAL_Y1 - 20, FIELD.GOAL_Y2 + 20);
   arriveToward(p, lineX, targetY, speed, 8);
 
   const dBall = S.dist(p.x, p.y, b.x, b.y);
