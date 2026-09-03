@@ -9,7 +9,7 @@
     "dev": "node --watch server/index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^5.2.1",
     "qrcode": "^1.5.4",
     "socket.io": "^4.7.5",
     "three": "^0.185.1"
